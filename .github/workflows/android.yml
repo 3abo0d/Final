@@ -36,73 +36,77 @@ jobs:
           set -e
           SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
             -type f -name sdkmanager -print -quit)
-
-          if [ -z "$SDKMANAGER" ]; then
-            echo "ERROR: Android SDK manager not found."
-            exit 1
-          fi
-
+          test -n "$SDKMANAGER"
           echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
-          echo "Found SDK manager: $SDKMANAGER"
 
-      - name: Accept Android SDK licenses
-        run: |
-          yes | "$SDKMANAGER" --licenses || true
+      - name: Accept SDK licenses
+        run: yes | "$SDKMANAGER" --licenses || true
 
-      - name: Install Android SDK packages
+      - name: Install Android SDK
         run: |
-          set -e
           "$SDKMANAGER" --install \
             "platform-tools" \
-            "platforms;android-34" \
             "platforms;android-35" \
-            "platforms;android-36" \
-            "build-tools;34.0.0" \
-            "build-tools;35.0.0" \
-            "build-tools;36.0.0"
+            "build-tools;35.0.0"
 
       - name: Extract source ZIP
         run: |
           set -e
           mkdir -p extracted
-
           ZIP=$(find . -maxdepth 1 -type f -iname '*.zip' -print -quit)
-
-          if [ -z "$ZIP" ]; then
-            echo "ERROR: No ZIP file found in repository root."
-            exit 1
-          fi
-
-          echo "Extracting $ZIP"
+          test -n "$ZIP"
           unzip -q "$ZIP" -d extracted
 
-      - name: Find Gradle wrapper
+      - name: Locate Gradle project
         run: |
           set -e
+          SETTINGS=$(find extracted \
+            \( -name settings.gradle -o -name settings.gradle.kts \) \
+            -print -quit)
+          test -n "$SETTINGS"
 
-          echo "Searching for Gradle wrapper..."
+          PROJECT_DIR=$(dirname "$SETTINGS")
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          find extracted -type f -name gradlew -print
+          echo "Project: $PROJECT_DIR"
 
-          WRAPPER=$(find extracted -type f -name gradlew -print -quit)
-
-          if [ -z "$WRAPPER" ]; then
-            echo "ERROR: No gradlew file found in ZIP."
-            echo "ZIP contents:"
-            find extracted -maxdepth 5 -type f | head -200
+          if [ ! -f "$PROJECT_DIR/gradle/wrapper/gradle-wrapper.properties" ]; then
+            echo "ERROR: Gradle wrapper properties missing."
             exit 1
           fi
 
-          PROJECT_DIR=$(dirname "$WRAPPER")
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
-          echo "Gradle project found: $PROJECT_DIR"
-
-      - name: Build debug APK
+      - name: Generate Gradle wrapper
         run: |
           set -e
           cd "$PROJECT_DIR"
+
+          VERSION=$(grep '^distributionUrl=' \
+            gradle/wrapper/gradle-wrapper.properties \
+            | sed 's/.*gradle-\([0-9.]*\)-.*/\1/')
+
+          if [ -z "$VERSION" ]; then
+            echo "ERROR: Could not detect Gradle version."
+            exit 1
+          fi
+
+          echo "Gradle version: $VERSION"
+
+          curl -fL \
+            "https://services.gradle.org/distributions/gradle-${VERSION}-bin.zip" \
+            -o /tmp/gradle.zip
+
+          unzip -q /tmp/gradle.zip -d /tmp
+
+          /tmp/gradle-${VERSION}/bin/gradle wrapper \
+            --gradle-version "$VERSION" \
+            --distribution-type bin
+
           chmod +x gradlew
+
+      - name: Build APK
+        run: |
+          set -e
+          cd "$PROJECT_DIR"
           ./gradlew assembleDebug
 
       - name: Upload APK
