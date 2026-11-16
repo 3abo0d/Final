@@ -27,12 +27,8 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # Install Android command-line tools without requesting
-      # the obsolete SDK package named "tools".
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          packages: ''
 
       - name: Accept Android SDK licenses
         run: yes | sdkmanager --licenses || true
@@ -41,39 +37,38 @@ jobs:
         run: |
           set -e
           mkdir -p extracted
-
           ZIP=$(find . -maxdepth 1 -type f -iname '*.zip' -print -quit)
 
           if [ -z "$ZIP" ]; then
-            echo "ERROR: No ZIP file found in repository root."
+            echo "ERROR: No ZIP file found."
             exit 1
           fi
 
-          echo "Extracting: $ZIP"
           unzip -q "$ZIP" -d extracted
 
-      - name: Locate Gradle project
+      - name: Find Gradle project
         run: |
           set -e
 
-          SETTINGS=$(find extracted \
-            \( -name settings.gradle -o -name settings.gradle.kts \) \
-            -print -quit)
+          echo "Searching extracted files..."
 
-          if [ -z "$SETTINGS" ]; then
-            echo "ERROR: No Gradle settings file found in ZIP."
+          find extracted -maxdepth 5 -type f \
+            \( -name gradlew -o -name settings.gradle -o -name settings.gradle.kts \) \
+            -print
+
+          WRAPPER=$(find extracted -type f -name gradlew -print -quit)
+
+          if [ -z "$WRAPPER" ]; then
+            echo "ERROR: No gradlew wrapper exists in the ZIP."
+            echo "The ZIP contents are:"
+            find extracted -maxdepth 5 -type f | head -200
             exit 1
           fi
 
-          PROJECT_DIR=$(dirname "$SETTINGS")
-
-          if [ ! -f "$PROJECT_DIR/gradlew" ]; then
-            echo "ERROR: Gradle wrapper not found in $PROJECT_DIR"
-            exit 1
-          fi
+          PROJECT_DIR=$(dirname "$WRAPPER")
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Found project: $PROJECT_DIR"
+          echo "Found Gradle wrapper in: $PROJECT_DIR"
 
       - name: Build debug APK
         run: |
