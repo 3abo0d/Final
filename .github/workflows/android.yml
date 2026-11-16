@@ -30,18 +30,23 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses || true
+
       - name: Extract project ZIP
         run: |
           mkdir -p extracted
-          ZIP=$(find . -maxdepth 1 -name '*.zip' | head -n 1)
+          ZIP=$(find . -maxdepth 1 -name '*.zip' -print -quit)
           test -n "$ZIP"
           unzip -q "$ZIP" -d extracted
 
       - name: Locate Gradle project
         run: |
-          SETTINGS=$(find extracted -name settings.gradle -o -name settings.gradle.kts | head -n 1)
+          SETTINGS=$(find extracted \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)
           test -n "$SETTINGS"
-          echo "PROJECT_DIR=$(dirname "$SETTINGS")" >> "$GITHUB_ENV"
+          PROJECT_DIR=$(dirname "$SETTINGS")
+          test -f "$PROJECT_DIR/gradlew"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
       - name: Build APK
         run: |
